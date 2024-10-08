@@ -1498,6 +1498,7 @@ class DPOTrainer(Trainer):
             metrics[f"{prefix}nll_loss"] = policy_nll_loss.detach().mean().cpu()
 
         if self.aux_loss_enabled:
+            metrics[f"{prefix}aux_loss"] = aux_loss.detach().cpu()
             return losses.mean() + self.aux_loss_coef * aux_loss, metrics
 
         return losses.mean(), metrics
