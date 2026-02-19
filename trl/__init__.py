@@ -1,4 +1,4 @@
-# Copyright 2020-2025 The HuggingFace Team. All rights reserved.
+# Copyright 2020-2026 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,10 +13,10 @@
 # limitations under the License.
 
 import sys
-import warnings
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
+from . import _compat
 from .import_utils import _LazyModule
 
 
@@ -26,7 +26,7 @@ except PackageNotFoundError:
     __version__ = "unknown"
 
 _import_structure = {
-    "scripts": ["DatasetMixtureConfig", "ScriptArguments", "TrlParser", "get_dataset", "init_zero_verbose"],
+    "chat_template_utils": ["add_response_schema", "clone_chat_template", "get_training_chat_template"],
     "data_utils": [
         "apply_chat_template",
         "extract_prompt",
@@ -43,70 +43,38 @@ _import_structure = {
         "unpair_preference_dataset",
     ],
     "models": [
-        "SUPPORTED_ARCHITECTURES",
-        "AutoModelForCausalLMWithValueHead",
-        "AutoModelForSeq2SeqLMWithValueHead",
-        "PreTrainedModelWrapper",
-        "clone_chat_template",
         "create_reference_model",
-        "setup_chat_format",
     ],
+    "scripts": ["DatasetMixtureConfig", "ScriptArguments", "TrlParser", "get_dataset", "init_zero_verbose"],
     "trainer": [
-        "AllTrueJudge",
-        "BaseBinaryJudge",
-        "BaseJudge",
-        "BasePairwiseJudge",
-        "BaseRankJudge",
-        "BCOConfig",
-        "BCOTrainer",
-        "CPOConfig",
-        "CPOTrainer",
+        "BEMACallback",
         "DPOConfig",
         "DPOTrainer",
-        "FDivergenceConstants",
-        "FDivergenceType",
-        "GKDConfig",
-        "GKDTrainer",
+        "FDivergenceConstants",  # deprecated import
+        "FDivergenceType",  # deprecated import
         "GRPOConfig",
         "GRPOTrainer",
-        "HfPairwiseJudge",
         "KTOConfig",
         "KTOTrainer",
         "LogCompletionsCallback",
         "ModelConfig",
-        "NashMDConfig",
-        "NashMDTrainer",
-        "OnlineDPOConfig",
-        "OnlineDPOTrainer",
-        "OpenAIPairwiseJudge",
-        "ORPOConfig",
-        "ORPOTrainer",
-        "PairRMJudge",
-        "PPOConfig",
-        "PPOTrainer",
-        "PRMConfig",
-        "PRMTrainer",
         "RewardConfig",
         "RewardTrainer",
+        "RichProgressCallback",
         "RLOOConfig",
         "RLOOTrainer",
         "SFTConfig",
         "SFTTrainer",
-        "WinRateCallback",
-        "XPOConfig",
-        "XPOTrainer",
-    ],
-    "trainer.callbacks": [
-        "BEMACallback",
-        "MergeModelCallback",
-        "RichProgressCallback",
         "SyncRefModelCallback",
         "WeaveCallback",
+        "get_kbit_device_map",
+        "get_peft_config",
+        "get_quantization_config",
     ],
-    "trainer.utils": ["get_kbit_device_map", "get_peft_config", "get_quantization_config"],
 }
 
 if TYPE_CHECKING:
+    from .chat_template_utils import add_response_schema, clone_chat_template, get_training_chat_template
     from .data_utils import (
         apply_chat_template,
         extract_prompt,
@@ -123,68 +91,34 @@ if TYPE_CHECKING:
         unpair_preference_dataset,
     )
     from .models import (
-        SUPPORTED_ARCHITECTURES,
-        AutoModelForCausalLMWithValueHead,
-        AutoModelForSeq2SeqLMWithValueHead,
-        PreTrainedModelWrapper,
-        clone_chat_template,
         create_reference_model,
-        setup_chat_format,
     )
     from .scripts import DatasetMixtureConfig, ScriptArguments, TrlParser, get_dataset, init_zero_verbose
     from .trainer import (
-        AllTrueJudge,
-        BaseBinaryJudge,
-        BaseJudge,
-        BasePairwiseJudge,
-        BaseRankJudge,
-        BCOConfig,
-        BCOTrainer,
-        CPOConfig,
-        CPOTrainer,
+        BEMACallback,
         DPOConfig,
         DPOTrainer,
-        FDivergenceConstants,
-        FDivergenceType,
-        GKDConfig,
-        GKDTrainer,
+        FDivergenceConstants,  # deprecated import
+        FDivergenceType,  # deprecated import
         GRPOConfig,
         GRPOTrainer,
-        HfPairwiseJudge,
         KTOConfig,
         KTOTrainer,
         LogCompletionsCallback,
         ModelConfig,
-        NashMDConfig,
-        NashMDTrainer,
-        OnlineDPOConfig,
-        OnlineDPOTrainer,
-        OpenAIPairwiseJudge,
-        ORPOConfig,
-        ORPOTrainer,
-        PairRMJudge,
-        PPOConfig,
-        PPOTrainer,
-        PRMConfig,
-        PRMTrainer,
         RewardConfig,
         RewardTrainer,
+        RichProgressCallback,
         RLOOConfig,
         RLOOTrainer,
         SFTConfig,
         SFTTrainer,
-        WinRateCallback,
-        XPOConfig,
-        XPOTrainer,
-    )
-    from .trainer.callbacks import (
-        BEMACallback,
-        MergeModelCallback,
-        RichProgressCallback,
         SyncRefModelCallback,
         WeaveCallback,
+        get_kbit_device_map,
+        get_peft_config,
+        get_quantization_config,
     )
-    from .trainer.utils import get_kbit_device_map, get_peft_config, get_quantization_config
 
 else:
     import sys

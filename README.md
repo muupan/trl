@@ -25,7 +25,7 @@ Explore how to seamlessly integrate TRL with OpenEnv in our [dedicated documenta
 
 ## Overview
 
-TRL is a cutting-edge library designed for post-training foundation models using advanced techniques like Supervised Fine-Tuning (SFT), Group Realtive Policy Optimization (GRPO), and Direct Preference Optimization (DPO). Built on top of the [🤗 Transformers](https://github.com/huggingface/transformers) ecosystem, TRL supports a variety of model architectures and modalities, and can be scaled-up across various hardware setups.
+TRL is a cutting-edge library designed for post-training foundation models using advanced techniques like Supervised Fine-Tuning (SFT), Group Relative Policy Optimization (GRPO), and Direct Preference Optimization (DPO). Built on top of the [🤗 Transformers](https://github.com/huggingface/transformers) ecosystem, TRL supports a variety of model architectures and modalities, and can be scaled-up across various hardware setups.
 
 ## Highlights
 
@@ -97,12 +97,15 @@ from trl.rewards import accuracy_reward
 dataset = load_dataset("trl-lib/DeepMath-103K", split="train")
 
 trainer = GRPOTrainer(
-    model="Qwen/Qwen2-0.5B-Instruct",
+    model="Qwen/Qwen2.5-0.5B-Instruct",
     reward_funcs=accuracy_reward,
     train_dataset=dataset,
 )
 trainer.train()
 ```
+
+> [!NOTE]
+> For reasoning models, use the `reasoning_accuracy_reward()` function for better results.
 
 ### `DPOTrainer`
 
@@ -190,13 +193,12 @@ Read more in the [Experimental docs](https://huggingface.co/docs/trl/experimenta
 ## Citation
 
 ```bibtex
-@misc{vonwerra2022trl,
-  author = {Leandro von Werra and Younes Belkada and Lewis Tunstall and Edward Beeching and Tristan Thrush and Nathan Lambert and Shengyi Huang and Kashif Rasul and Quentin Gallouédec},
-  title = {TRL: Transformer Reinforcement Learning},
-  year = {2020},
-  publisher = {GitHub},
-  journal = {GitHub repository},
-  howpublished = {\url{https://github.com/huggingface/trl}}
+@software{vonwerra2020trl,
+  title   = {{TRL: Transformers Reinforcement Learning}},
+  author  = {von Werra, Leandro and Belkada, Younes and Tunstall, Lewis and Beeching, Edward and Thrush, Tristan and Lambert, Nathan and Huang, Shengyi and Rasul, Kashif and Gallouédec, Quentin},
+  license = {Apache-2.0},
+  url     = {https://github.com/huggingface/trl},
+  year    = {2020}
 }
 ```
 

@@ -1,4 +1,4 @@
-# Copyright 2020-2025 The HuggingFace Team. All rights reserved.
+# Copyright 2020-2026 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -117,11 +116,14 @@ class MiniLLMConfig(GRPOConfig):
             )
 
         if self.do_eval and self.eval_strategy != "no":
+            # Determine the number of generations to use for evaluation
+            num_generations = self.num_generations_eval or self.num_generations
+
             # Just ensure the value is divisible by the global batch size
-            if (self.per_device_eval_batch_size * num_processes) % self.num_generations != 0:
+            if (self.per_device_eval_batch_size * num_processes) % num_generations != 0:
                 raise ValueError(
                     f"The global eval batch size ({self.per_device_eval_batch_size} * {num_processes}) must be "
-                    f"divisible by num_generations ({self.num_generations})."
+                    f"divisible by the number of generations used for evaluation ({num_generations})."
                 )
 
         # The generation batch must contain full prompt groups (no partials), so it must be divisible by
@@ -131,15 +133,6 @@ class MiniLLMConfig(GRPOConfig):
                 f"generation_batch_size ({self.generation_batch_size}) must be divisible by num_generations "
                 f"({self.num_generations})."
             )
-
-        if self.use_liger_loss is not None:
-            warnings.warn(
-                "The `use_liger_loss` argument is deprecated and will be removed in version 0.28.0. Please use "
-                "`use_liger_kernel` instead.",
-                FutureWarning,
-                stacklevel=2,
-            )
-            self.use_liger_kernel = self.use_liger_loss
 
         if self.delta is not None and self.use_liger_kernel:
             raise ValueError("Liger kernel does not support two-sided GRPO loss yet.")
