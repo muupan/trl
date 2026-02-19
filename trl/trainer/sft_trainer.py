@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import contextlib
+import json
 import os
 import warnings
 from collections import defaultdict
@@ -424,8 +425,8 @@ class DataCollatorForVisionLanguageModeling(DataCollatorMixin):
         )
 
         # Concatenate prompts and completions
-        prompt_ids, completion_ids = processed_prompts["input_ids"], processed_completions["input_ids"]
-        prompt_mask, completion_mask = processed_prompts["attention_mask"], processed_completions["attention_mask"]
+        prompt_ids, prompt_mask = processed_prompts["input_ids"], processed_prompts["attention_mask"]
+        completion_ids, completion_mask = processed_completions["input_ids"], processed_completions["attention_mask"]
         input_ids = torch.cat((prompt_ids, completion_ids), dim=1)
         attention_mask = torch.cat((prompt_mask, completion_mask), dim=1)
         completion_mask = torch.cat((torch.zeros_like(prompt_mask), completion_mask), dim=1)
@@ -606,7 +607,7 @@ class SFTTrainer(BaseTrainer):
         elif isinstance(args, TrainingArguments) and not isinstance(args, SFTConfig):
             dict_args = args.to_dict()
             dict_args["hub_token"] = args.hub_token  # to_dict hides the hub_token
-            if not Version(transformers.__version__) < Version("5.0.0.dev0"):
+            if Version(transformers.__version__) < Version("5.0.0"):
                 dict_args.pop("push_to_hub_token")
             args = SFTConfig(**dict_args)
 
@@ -723,6 +724,24 @@ class SFTTrainer(BaseTrainer):
         # Create PEFT model
         if peft_config is not None:
             model = get_peft_model(model, peft_config)
+
+        # PEFT + DeepSpeed ZeRO-3 requires reentrant checkpointing. For more details, see
+        # https://github.com/huggingface/trl/issues/2514#issuecomment-2692152703
+        if (
+            is_peft_model(model)
+            and args.deepspeed_plugin is not None
+            and args.deepspeed_plugin.zero_stage == 3
+            and args.gradient_checkpointing
+        ):
+            args.gradient_checkpointing_kwargs = args.gradient_checkpointing_kwargs or {}
+            use_reentrant = args.gradient_checkpointing_kwargs.get("use_reentrant")
+            if use_reentrant is False:
+                logger.warning(
+                    "You are using PEFT with DeepSpeed ZeRO-3 and gradient checkpointing with `use_reentrant=False`. "
+                    "`use_reentrant` is forced to `True` in this configuration to ensure correct training. To remove "
+                    "this warning, unset `use_reentrant` in `gradient_checkpointing_kwargs` or set it to `True`."
+                )
+            args.gradient_checkpointing_kwargs["use_reentrant"] = True
 
         # When using gradient checkpointing with PEFT, we need to enable input gradients. transformers.Trainer normally
         # handles this, but a bug currently prevents it; see https://github.com/huggingface/transformers/issues/42489
@@ -880,6 +899,14 @@ class SFTTrainer(BaseTrainer):
             else:
                 raise ValueError(f"Invalid `loss_type` {args.loss_type} passed. Supported values are 'nll' and 'dft'.")
 
+        # Transformers explicitly set use_reentrant=True in the past to silence a PyTorch warning, but the default was
+        # never updated once PyTorch switched to recommending use_reentrant=False. Until that change lands upstream
+        # (see https://github.com/huggingface/transformers/pull/43203) and is released (most likely in 5.0.0), we
+        # default to the recommended non-reentrant behavior here, while preserving any user-provided value.
+        if args.gradient_checkpointing and Version(transformers.__version__) < Version("5.0.0"):
+            args.gradient_checkpointing_kwargs = args.gradient_checkpointing_kwargs or {}
+            args.gradient_checkpointing_kwargs.setdefault("use_reentrant", False)
+
         super().__init__(
             model=model,
             args=args,
@@ -990,6 +1017,8 @@ class SFTTrainer(BaseTrainer):
                     map_kwargs["desc"] = f"Tokenizing {dataset_name} dataset"
 
                 def tokenize_fn(example, processing_class, dataset_text_field, assistant_only_loss):
+                    tools = example.get("tools")
+                    tools = json.loads(tools) if isinstance(tools, str) else tools
                     if "prompt" in example:  # prompt-completion case
                         output = {}
                         if is_conversational(example):
@@ -1001,9 +1030,10 @@ class SFTTrainer(BaseTrainer):
                                 completion = example["completion"]
                             prompt_ids = processing_class.apply_chat_template(
                                 prompt,
-                                tokenize=True,
+                                tools=tools,
                                 add_generation_prompt=True,
-                                tools=example.get("tools"),
+                                tokenize=True,
+                                return_dict=False,
                                 **example.get("chat_template_kwargs", {}),
                             )
                             # Fix transformers inconsistency: for VLMs, apply_chat_template returns lists of lists
@@ -1011,10 +1041,10 @@ class SFTTrainer(BaseTrainer):
                             prompt_ids = prompt_ids[0] if isinstance(prompt_ids[0], list) else prompt_ids
                             prompt_completion_processed = processing_class.apply_chat_template(
                                 prompt + completion,
-                                return_dict=True,
+                                tools=tools,
                                 tokenize=True,
+                                return_dict=True,
                                 return_assistant_tokens_mask=assistant_only_loss,
-                                tools=example.get("tools"),
                                 **example.get("chat_template_kwargs", {}),
                             )
                             # Fix transformers inconsistency: for VLMs, apply_chat_template returns lists of lists
@@ -1061,10 +1091,10 @@ class SFTTrainer(BaseTrainer):
                                 messages = example["messages"]
                             processed = processing_class.apply_chat_template(
                                 messages,
-                                return_dict=True,
+                                tools=tools,
                                 tokenize=True,
+                                return_dict=True,
                                 return_assistant_tokens_mask=assistant_only_loss,
-                                tools=example.get("tools"),
                                 **example.get("chat_template_kwargs", {}),
                             )
                             # Fix transformers inconsistency: for VLMs, apply_chat_template returns lists of lists
@@ -1143,6 +1173,7 @@ class SFTTrainer(BaseTrainer):
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         mode = "train" if self.model.training else "eval"
+        prediction_loss_only = inputs.pop("_prediction_loss_only", None)
 
         # Set aside labels as it will be dropped by super().compute_loss() if a custom `compute_loss_func` is used.
         # This can be removed when this issue is fixed.
@@ -1154,6 +1185,23 @@ class SFTTrainer(BaseTrainer):
 
         # Request token accuracy from Liger kernel and set token scaling if using DFT loss
         if self.args.use_liger_kernel:
+            # Avoid materializing full logits during eval unless explicitly needed.
+            # By default, liger kernel only skips logits during training (self.training=True).
+            # When only loss is needed for eval (no compute_metrics), we can safely skip logits.
+            # prediction_step communicates whether logits are expected via `_prediction_loss_only`;
+            # this prevents skipping logits during `predict()` where outputs are requested.
+            # Keep logits when preprocess_logits_for_metrics is set, even if compute_metrics is None.
+            # to prevent massive vRAM spikes from the lm_head projection.
+            # See: https://github.com/huggingface/trl/issues/4679
+            inputs["skip_logits"] = (
+                self.model.training
+                or self.args.prediction_loss_only
+                or (
+                    self.compute_metrics is None
+                    and self.preprocess_logits_for_metrics is None
+                    and prediction_loss_only is not False
+                )
+            )
             inputs["return_token_accuracy"] = True
             inputs["use_token_scaling"] = self.args.loss_type == "dft"
 
@@ -1200,13 +1248,9 @@ class SFTTrainer(BaseTrainer):
                 token_accuracy = self.accelerator.gather_for_metrics(outputs.token_accuracy).mean().item()
                 self._metrics[mode]["mean_token_accuracy"].append(token_accuracy)
             else:
-                # liger-kernel<=0.6.4 can omit token_accuracy even when requested; fixed for Gemma3 in
-                # https://github.com/linkedin/Liger-Kernel/pull/1010
                 warnings.warn(
                     "liger-kernel did not return token_accuracy when requested. The mean_token_accuracy metric will "
-                    "not be logged. This may indicate an outdated liger-kernel version. Consider upgrading to the "
-                    "latest version. If the issue persists after upgrading, please report it to the liger-kernel "
-                    "repository.",
+                    "not be logged. This is unexpected; please report it to the liger-kernel repository.",
                     stacklevel=2,
                 )
         else:
@@ -1256,6 +1300,11 @@ class SFTTrainer(BaseTrainer):
             self._metrics[mode]["aux_loss"].append(aux_loss)
 
         return (loss, outputs) if return_outputs else loss
+
+    def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
+        # Preserve the eval loop intent so compute_loss can decide whether logits are needed.
+        inputs["_prediction_loss_only"] = prediction_loss_only
+        return super().prediction_step(model, inputs, prediction_loss_only, ignore_keys=ignore_keys)
 
     # Override training step to add activation offloading context.
     def training_step(self, *args, **kwargs):
