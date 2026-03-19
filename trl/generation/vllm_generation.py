@@ -574,16 +574,9 @@ class VLLMGeneration:
         tools = self.tools
         chat_template = self.chat_template
 
-        # Wake up colocated vLLM weights if needed (idempotent if already awake from sync_weights)
-        if self.mode == "colocate" and self.enable_sleep_mode:
-            empty_cache()  # required to avoid OOM in some cases
-            self.llm.wake_up(tags=["weights"])
-            # Work around for https://github.com/vllm-project/vllm/issues/29341
-            try:
-                self.llm.collective_rpc("reload_weights")
-            except NotImplementedError:
-                # Non-CUDA vLLM backends (e.g., vllm-ascend's NPUWorkerV1), don't implement reload_weights
-                pass
+        # Since vLLM sleep level 2 discards weights, we need to sync weights to wake up the engine
+        if self.mode == "colocate" and self.enable_sleep_mode and self.llm.llm_engine.is_sleeping():
+            self.sync_weights()
 
         if is_conversational({"prompt": prompts[0]}):
             prompts = [prepare_multimodal_messages_vllm(prompt) for prompt in prompts]
