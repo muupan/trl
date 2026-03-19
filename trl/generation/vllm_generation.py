@@ -371,6 +371,9 @@ class VLLMGeneration:
             )
             if self.enable_sleep_mode:
                 self.llm.sleep(level=2)
+                self._llm_weights_sleeping = True
+            else:
+                self._llm_weights_sleeping = False
         else:
             raise ValueError(f"vllm_mode must be either 'server' or 'colocate', got '{self.mode}'.")
 
@@ -453,6 +456,7 @@ class VLLMGeneration:
         if self.mode == "colocate" and self.enable_sleep_mode:
             empty_cache()  # required to avoid OOM in some cases
             self.llm.wake_up(tags=["weights"])
+            self._llm_weights_sleeping = False
 
         model = self.model
         accelerator = self.accelerator
@@ -575,7 +579,7 @@ class VLLMGeneration:
         chat_template = self.chat_template
 
         # Since vLLM sleep level 2 discards weights, we need to sync weights to wake up the engine
-        if self.mode == "colocate" and self.enable_sleep_mode and self.llm.llm_engine.is_sleeping():
+        if self.mode == "colocate" and self.enable_sleep_mode and self._llm_weights_sleeping:
             self.sync_weights()
 
         if is_conversational({"prompt": prompts[0]}):
@@ -739,5 +743,6 @@ class VLLMGeneration:
 
             if self.enable_sleep_mode:
                 self.llm.sleep(level=2)
+                self._llm_weights_sleeping = True
 
         return prompt_ids, completion_ids, logprobs, logprob_token_ids, extra_fields
